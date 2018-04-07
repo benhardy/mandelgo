@@ -23,7 +23,33 @@ type pixel struct {
     y int
     paint color
 }
-
+func iterate(xc float64, yc float64, iMax int) (bool, float64) {
+    xp := 0.0
+    yp := 0.0
+    var i int
+    escaped := false
+    xp2 := 0.0
+    yp2 := 0.0
+    for i = 0; i < iMax; i++ {
+        xp2 = xp * xp
+        yp2 = yp * yp
+        if xp2 + yp2 > 4.0 {
+            escaped = true
+            break
+        }
+        xp_ := xp2 - yp2 + xc
+        yp = 2 * xp * yp + yc
+        xp = xp_
+        //xp, yp = xp2 - yp2 + xc, 2 * xp * yp + yc
+    }
+    if !escaped {
+        return false, 0
+    }
+    logZn := math.Log(xp2 + yp2) / 2.0
+    nu := math.Log(logZn / math.Log(2) ) / math.Log(2)
+    iSmooth := float64(i) - nu + 1
+    return true, iSmooth
+}
 func main() {
     palette := []color{
         color { 0.00, 0.00, 0.00 }, // black
@@ -69,29 +95,9 @@ func main() {
                 for x := 0; x < width; x++ {
                     xc := xCenter + scale * (float64(x) / float64(width) - 0.5)
                     yc := yCenter - aspect * scale * (float64(y) / float64(height) - 0.5)
-                    xp := 0.0
-                    yp := 0.0
-                    var i int
-                    escaped := false
-                    xp2 := 0.0
-                    yp2 := 0.0
-                    for i = 0; i < iMax; i++ {
-                        xp2 = xp * xp
-                        yp2 = yp * yp
-                        if xp2 + yp2 > 4.0 {
-                            escaped = true
-                            break
-                        }
-                        xp_ := xp2 - yp2 + xc
-                        yp = 2 * xp * yp + yc
-                        xp = xp_
-                        //xp, yp = xp2 - yp2 + xc, 2 * xp * yp + yc
-                    }
+                    escaped, iSmooth := iterate(xc, yc, iMax)
                     var paint color
                     if escaped {
-                        logZn := math.Log(xp2 + yp2) / 2.0
-                        nu := math.Log(logZn / math.Log(2) ) / math.Log(2)
-                        iSmooth := float64(i) - nu + 1
                         palPos := float64(len(palette)-1) * math.Log(iSmooth) / math.Log(float64(iMax))
                         palBase := int(palPos)
                         palIndex := math.Floor(palPos)
