@@ -32,8 +32,8 @@ func NewPalette() *Palette {
         color { 0.02, 0.25, 0.01 }, // grass
         color { 0.95, 0.97, 0.96 }, // cream
         color { 0.70, 1.00, 0.00 }, // chartreuse
-        color { 0.22, 0.63, 0.30 }, // dark chartreuse
-        color { 0.50, 0.00, 0.13 }, // burgundy
+        color { 0.22, 0.00, 0.30 }, // dark chartreuse
+        color { 0.50, 0.00, 0.93 }, // something bluish
         color { 0.968, 0.913, 0.556 }, // flavescent yellow
         color { 0.50, 0.70, 1.00 }, // sky
         color { 0.074, 0.533, 0.031 }, // india green
