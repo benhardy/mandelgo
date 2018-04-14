@@ -4,6 +4,8 @@ import "github.com/fogleman/gg"
 import "math"
 import "fmt"
 import "flag"
+import "time"
+import "runtime"
 
 type color struct {
     r, g, b float64
@@ -61,11 +63,14 @@ type pixel struct {
     paint color
 }
 type area struct {
-    left, top, width, height int
-    paint color
+    left, top, right, bottom int
 }
-func (a *area) numPixels() int {
-    return a.width * a.height
+func (a*area) Pixels() int {
+    return  (a.right - a.left + 1) * (a.bottom - a.top +1)
+}
+
+func (a*area) String() string {
+    return fmt.Sprintf("(%d-%d, %d-%d  = %d)", a.left, a.right, a.top, a.bottom, a.Pixels())
 }
 
 type Board struct {
@@ -73,7 +78,7 @@ type Board struct {
     xCenter, yCenter, scale, aspect float64
     width, height int
     workQueue chan area
-    paintQueue chan pixel
+    doneQueue chan int
     palette *Palette
     grid [][]color
 }
@@ -144,80 +149,95 @@ func (b *Board) handlePixel(x int, y int) int {
     return 0
 }
 
-func (b* Board) walkPerimeter(xLeft, yTop, xRight, yBottom, depth int) int {
-    //indentFmt := fmt.Sprintf("%%%ds", depth*4)
-    //indent := fmt.Sprintf(indentFmt, " ")
-    if xLeft > xRight || yTop > yBottom {
-        //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) has nothing to do\n", indent, xLeft, yTop, xRight, yBottom)
-        return 0
+func (b* Board) walkPerimeter(rect area, thread int, job int) {
+    //rectDesc := rect.String()
+    //fmt.Printf("[%d:%d] walkPerimeter%s starting\n", thread, job, rectDesc)
+    if rect.left > rect.right || rect.top > rect.bottom {
+        //fmt.Printf("[%d:%d] walkPerimeter%s did nothing\n", thread, job, rectDesc)
+        return
     }
-    if xLeft == xRight && yTop == yBottom {
-        //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing single pixel\n", indent, xLeft, yTop, xRight, yBottom)
-        return b.handlePixel(xLeft, yTop)
+    if rect.left == rect.right && rect.top == rect.bottom {
+      //fmt.Printf("[%d:%d] walkPerimeter%s single pixel\n", thread, job, rectDesc)
+        b.handlePixel(rect.left, rect.top)
+        b.doneQueue<-1
+        return
     }
     totalCount := 0
     escapeCount := 0
-    if xRight - xLeft < 8 || yBottom - yTop < 8 { // eh, don't bother with recursive overhead with small squares
-        totalCount := 0
-        for yp := yTop; yp <= yBottom; yp++ {
-            for xp := xLeft; xp <= xRight; xp++ {
+
+    if rect.right - rect.left < 8 || rect.bottom - rect.top < 8 { // eh, don't bother with recursive overhead with small squares
+        for yp := rect.top; yp <= rect.bottom; yp++ {
+            for xp := rect.left; xp <= rect.right; xp++ {
                 escapeCount += b.handlePixel(xp, yp)
                 totalCount++
             }
         }
-        return totalCount
+        //fmt.Printf("[%d] walkPerimeter%s small  block %d pixels\n", thread, rectDesc, totalCount)
+        b.doneQueue<-totalCount
+        return
     }
-    // draw top edge
-    //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing top edge\n", indent, xLeft, yTop, xRight, yBottom)
 
-    for xp := xLeft; xp <= xRight; xp++ {
-        escapeCount += b.handlePixel(xp, yTop)
+    // draw top edge
+    //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing top edge\n", indent, rect.left, rect.top, rect.right, rect.bottom)
+
+    for xp := rect.left; xp <= rect.right; xp++ {
+        escapeCount += b.handlePixel(xp, rect.top)
         totalCount++
     }
     // draw bottom edge
-    if yBottom > yTop {
-        //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing bottom edge\n", indent, xLeft, yTop, xRight, yBottom)
-        for xp := xLeft; xp <= xRight; xp++ {
-            escapeCount += b.handlePixel(xp, yBottom)
+    if rect.bottom > rect.top {
+        //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing bottom edge\n", indent, rect.left, rect.top, rect.right, rect.bottom)
+        for xp := rect.left; xp <= rect.right; xp++ {
+            escapeCount += b.handlePixel(xp, rect.bottom)
             totalCount++
         }
     }
     // draw left edge
-    //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing left edge\n", indent, xLeft, yTop, xRight, yBottom)
-    for yp := yTop + 1; yp < yBottom; yp++ {
-        escapeCount += b.handlePixel(xLeft, yp)
+    //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing left edge\n", indent, rect.left, rect.top, rect.right, rect.bottom)
+    for yp := rect.top + 1; yp < rect.bottom; yp++ {
+        escapeCount += b.handlePixel(rect.left, yp)
         totalCount++
     }
     // draw right edge
-    if xRight > xLeft {
-        //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing right edge\n", indent, xLeft, yTop, xRight, yBottom)
-        for yp := yTop + 1; yp < yBottom; yp++ {
-            escapeCount += b.handlePixel(xRight, yp)
+    if rect.right > rect.left {
+        //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) doing right edge\n", indent, rect.left, rect.top, rect.right, rect.bottom)
+        for yp := rect.top + 1; yp < rect.bottom; yp++ {
+            escapeCount += b.handlePixel(rect.right, yp)
             totalCount++
         }
     }
+    // no more drawing happens in this call, report results
     // we just drew the perimeter and it contained no
     // non-black pixels, so lets assume the whole thing is black
     if escapeCount == 0 {
-        //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) is a black box. avoiding that.\n", indent, xLeft, yTop, xRight, yBottom)
-        return 0
+        //fmt.Printf("[%d:%d] walkPerimeter%s is a black box vielding %d pixels\n", thread, job, rectDesc, rect.Pixels())
+        //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) is a black box. avoiding that.\n", indent, rect.left, rect.top, rect.right, rect.bottom)
+        b.doneQueue  <-rect.Pixels()
+        return
     }
-    //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) analyzed perimeter, %d/%d escaped\n", indent, xLeft, yTop, xRight, yBottom, escapeCount, totalCount)
-    xMid, yMid := (xLeft + xRight) /2, (yTop + yBottom)/2
-    depth++
-    xLeft++
-    xRight--
-    yTop++
-    yBottom--
-    if xRight - xLeft <= 0 || yBottom - yTop <= 0 {
-        return 0
+    //fmt.Printf("[%d:%d] walkPerimeter%s boundary provided %d pixels\n", thread, job, rectDesc, totalCount)
+    //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) analyzed perimeter, %d/%d escaped\n", indent, rect.left, rect.top, rect.right, rect.bottom, escapeCount, totalCount)
+    b.doneQueue<-totalCount
+    xMid, yMid := (rect.left + rect.right) /2, (rect.top + rect.bottom)/2
+    rect.left++
+    rect.right--
+    rect.top++
+    rect.bottom--
+    if rect.right - rect.left < 0 || rect.bottom - rect.top < 0 {
+        //fmt.Printf("[%d:%d] walkPerimeter%s has no futher to go\n", thread, job, rectDesc)
+        return
     }
-    subCount := b.walkPerimeter(xLeft, yTop, xMid, yMid, depth) +
-        b.walkPerimeter(xMid+1, yTop, xRight, yMid, depth) +
-        b.walkPerimeter(xLeft, yMid+1, xMid, yBottom, depth) +
-        b.walkPerimeter(xMid+1, yMid+1, xRight, yBottom, depth)
-    //fmt.Printf("%s walkPerimeter(%d, %d, %d, %d) children yielded %d pixels.\n", indent, xLeft, yTop, xRight, yBottom, subCount)
-    return subCount
+    //fmt.Printf("[%d:%d] walkPerimeter%s subdividing\n", thread, job, rectDesc)
+    b.workQueue<-area{rect.left, rect.top, xMid, yMid}
+    if xMid < rect.right {
+        b.workQueue<-area{xMid+1, rect.top, rect.right, yMid}
+        if yMid < rect.bottom {
+            b.workQueue<-area{xMid+1, yMid+1, rect.right, rect.bottom}
+        }
+    }
+    if yMid < rect.bottom {
+        b.workQueue<-area{rect.left, yMid+1, xMid, rect.bottom}
+    }
 }
 
 func main() {
@@ -237,21 +257,57 @@ func main() {
         yCenter:  *yCenterPtr,
         scale: *scalePtr,
         aspect : float64(*heightPtr) / float64(*widthPtr),
-        workQueue: make(chan area),
-        paintQueue: make(chan pixel),
+        workQueue: make(chan area, *widthPtr * *heightPtr),
+        doneQueue: make(chan int, *widthPtr * *heightPtr),
         palette: NewPalette(),
     }
     board.init()
     dc := gg.NewContext(board.width, board.height)
+
+    go func() {
+        fmt.Println("seeding work queue")
+        board.workQueue <-area { 0, 0, board.width -1, board.height -1}
+        fmt.Println("seeded work queue")
+    }()
+    cpus := runtime.NumCPU()
+    threads := cpus // /4 +1
     // painter
-    fmt.Println("rendering")
-    board.walkPerimeter(0, 0, board.width-1, board.height-1, 0)
-    fmt.Println("preparing to save")
+    for t := 0; t<threads; t++ {
+        fmt.Printf("starting thread %d\n", t)
+        go func(id int) {
+            jobCount := 0
+            for {
+                //fmt.Printf("[%d] thread waiting for a job\n", id)
+                spot := <-board.workQueue
+                if spot.left < 0 {
+                    break
+                }
+                jobCount++
+                //fmt.Printf("[%d] thread picked up job %d:%d %s\n", id, id, jobCount, &spot)
+                board.walkPerimeter(spot, id, jobCount)
+                //fmt.Printf("[%d] thread finished a job %d:%d %s\n", id, id, jobCount, &spot)
+            }
+        }(t)
+    }
+    fmt.Println("threads created, measuring completions")
+    for totalRemaining := board.width * board.height; totalRemaining > 0; {
+        doneBit := <-board.doneQueue
+        totalRemaining -= doneBit
+        fmt.Printf("\r%d pixels remaining   ", totalRemaining)
+        //fmt.Printf("\r%.d pixels remaining", totalRemaining)
+    }
+    time.Sleep(1)
+    fmt.Println("\nlooks like we are done, telling threads to quit")
+    for t := 0; t<threads; t++ {
+        board.workQueue<-area { left: -1 }
+    }
+
+    fmt.Println("\npreparing to save")
     for y := 0; y < board.height; y++ {
         for x :=0; x < board.width; x++ {
             col := board.grid[y][x]
             if col.r < 0.0 {
-                col = color { 0.0, 0.3, 0.0 }
+                col = color { 0.0, 0.0, 0.0 }
             }
             dc.SetRGB(col.r, col.g, col.b)
             dc.SetPixel(x, y)
