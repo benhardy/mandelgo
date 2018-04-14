@@ -5,6 +5,7 @@ import "math"
 import "fmt"
 import "flag"
 import "time"
+import "sync/atomic"
 import "runtime"
 
 type color struct {
@@ -290,13 +291,22 @@ func main() {
         }(t)
     }
     fmt.Println("threads created, measuring completions")
-    for totalRemaining := board.width * board.height; totalRemaining > 0; {
-        doneBit := <-board.doneQueue
-        totalRemaining -= doneBit
-        fmt.Printf("\r%d pixels remaining   ", totalRemaining)
-        //fmt.Printf("\r%.d pixels remaining", totalRemaining)
+    var totalRemaining int32
+    totalRemaining = int32(board.width * board.height)
+    go func() {
+        for ; totalRemaining > 0; {
+            doneBit := <-board.doneQueue
+            atomic.AddInt32(&totalRemaining,  int32(-doneBit))
+        }
+    }()
+    for {
+        time.Sleep(time.Millisecond * 50)
+        r := atomic.LoadInt32(&totalRemaining)
+        fmt.Printf("\r%d pixels remaining   ", r)
+        if r ==0 {
+            break
+        }
     }
-    time.Sleep(1)
     fmt.Println("\nlooks like we are done, telling threads to quit")
     for t := 0; t<threads; t++ {
         board.workQueue<-area { left: -1 }
