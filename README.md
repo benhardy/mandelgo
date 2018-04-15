@@ -35,5 +35,5 @@ go build
 # Usage
 Usage is via command line parameters, see code for details, but here's an example:
 
-`./mand -width=2000 -height=1500 -iterations=3000 -real=-0.7451 -imag=0.139 -scale=0.002 -save=hello.png`
+`./mandelgo -width=2000 -height=1500 -iterations=3000 -real=-0.7451 -imag=0.139 -scale=0.002 -save=hello.png`
 
