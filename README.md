@@ -23,5 +23,17 @@ pick one up.
 Pixels are rendered to a big array, initially. This is safe to be lock-free. The gg library which we use to render the resulting
 PNG files is _not_ concurrency safe, so we leave usage of that for when it's time to save the file. 
 
-Usage is via command line parameters, see code for details.
+## Get the code and build it
+```
+# This has one dependency, gg
+go get github.com/fogleman/gg github.com/benhardy/mandelgo
+if [ "$GOPATH" != "" ] ; then cd $GOPATH; else cd ~/go/src; fi
+cd github.com/benhardy/mandelgo
+go build
+```
+
+# Usage
+Usage is via command line parameters, see code for details, but here's an example:
+
+`./mand -width=2000 -height=1500 -iterations=3000 -real=-0.7451 -imag=0.139 -scale=0.002 -save=hello.png`
 
