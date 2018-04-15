@@ -1,5 +1,5 @@
 # mandelgo
-Mandelbrot set generator in Go.
+I am currently learning Go, so this is my way of saying Hello World as a Mandelbrot set generator in Go. It has some interesting optimizations.
 
 Please bear in mind that this code is currently very messy and was written for toodling around at home experimentally.
 
